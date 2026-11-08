@@ -2053,8 +2053,8 @@ class MainActivity : Activity() {
 
     private fun programsFor(s: Triple<String, Long?, String>): List<Prog> {
         val hidden = prefs.getStringSet("hidden_watch", emptySet())!!
-        val id = s.second ?: return readPrograms(TvContract.WatchNextPrograms.CONTENT_URI, hidden).map { it.second }
-        return readPrograms(TvContract.buildPreviewProgramsUriForChannel(id), hidden, "wp$id").map { it.second }
+        val id = s.second ?: return readPrograms(TvContract.WatchNextPrograms.CONTENT_URI, hidden, hiddenPkgs = hiddenApps()).map { it.second }
+        return readPrograms(TvContract.buildPreviewProgramsUriForChannel(id), hidden, "wp$id", hiddenApps()).map { it.second }
     }
 
     private fun pickWpSources(focus: Int = 0) {
@@ -2639,6 +2639,9 @@ class MainActivity : Activity() {
             // No update check here: this fork is not the app the upstream release would install. The row opens
             // this version's what's-new notes only.
             R.string.updates to Triple(getString(R.string.updates), getString(R.string.up_to_date_row, myVersion())) { showUpdates() },
+            R.string.app_lock_title to Triple(getString(R.string.app_lock_title),
+                if (lockedApps().isEmpty() && hiddenApps().isEmpty()) ""
+                else getString(R.string.app_lock_value, lockedApps().size, hiddenApps().size)) { unlock { renderApps(); openAppLocks() } },
             R.string.lock_layout to Triple(getString(R.string.lock_layout), toggle(lockOn())) {
                 if (!lockOn()) return@Triple setLock()
                 prefs.edit().remove("lock_pin").apply()
@@ -2732,6 +2735,7 @@ class MainActivity : Activity() {
             group(R.string.group_tv) +
             sectionRow(R.string.section_remote_home) +
             Triple(R.string.lock_layout, rows[R.string.lock_layout]!!, RowStyle(R.drawable.ms_lock, help = getString(R.string.lock_note))) +
+            Triple(R.string.app_lock_title, rows[R.string.app_lock_title]!!, RowStyle(R.drawable.ms_lock, help = getString(R.string.help_app_lock))) +
             Triple(R.string.updates, rows[R.string.updates]!!.let { (t, _, a) -> page(t, "›", a) },
                 RowStyle(R.drawable.ms_system_update, rows[R.string.updates]!!.second, help = getString(R.string.help_updates))) +
             listOfNotNull(if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) null
@@ -3478,7 +3482,14 @@ class MainActivity : Activity() {
     private fun pinnedInputs() = prefs.getStringSet("inputs_pinned", emptySet())!!
 
     /** The apps, and the inputs pinned to the row: the entries the row and All apps are made of. */
-    private fun listed(): List<App> = apps + sources.filter { it.pkg in pinnedInputs() }
+    private fun listed(): List<App> = (apps + sources.filter { it.pkg in pinnedInputs() })
+        .filter { it.pkg !in hiddenApps() } // the hidden space: gone from the row, All apps and every chooser
+
+    /** The kids' app lock (hold OK on an app to lock or hide it; see [openAppLocks]): packages that ask for the PIN on open. */
+    private fun lockedApps() = prefs.getStringSet("app_lock", emptySet())!!
+
+    /** Packages sent to the hidden space; they only show in [openAppLocks], behind the PIN. */
+    private fun hiddenApps() = prefs.getStringSet("app_hidden", emptySet())!!
 
     /** Once: after an update, the inputs in the row stay pinned, and the inputs drop out of row_hidden, where only apps go now. */
     private fun moveInputsToSources(inputs: List<App>) {
@@ -3966,6 +3977,33 @@ class MainActivity : Activity() {
     }
 
     /** Hold OK on a row app: Move (OK places it), Remove from row (stays in All apps), App info. Locked: Open only. */
+    /** The locked-and-hidden page: every app in either set, OK on a row puts it back to normal. */
+    private fun openAppLocks() {
+        val rows = (lockedApps().map { pkg -> page(appLabel(pkg), getString(R.string.locked_app_tag)) { unlockApp(pkg) } } +
+            hiddenApps().map { pkg -> page(appLabel(pkg), getString(R.string.hidden_app_tag)) { unhideApp(pkg) } })
+            .ifEmpty { listOf(page(getString(R.string.app_lock_empty), "") { }) }
+        showPage(getString(R.string.app_lock_title), rows) { renderSettings(R.string.app_lock_title) }
+    }
+
+    private fun appLabel(pkg: String): String = try {
+        packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString()
+    } catch (_: Exception) {
+        pkg
+    }
+
+    /** Take an app out of the locked set; the page re-renders with it gone. */
+    private fun unlockApp(pkg: String) {
+        prefs.edit().putStringSet("app_lock", lockedApps() - pkg).apply()
+        openAppLocks()
+    }
+
+    /** Take an app out of the hidden set: back to the row rules it had before (row_hidden decides). */
+    private fun unhideApp(pkg: String) {
+        prefs.edit().putStringSet("app_hidden", hiddenApps() - pkg).apply()
+        renderApps()
+        openAppLocks()
+    }
+
     private fun appMenu(v: View) {
         val pkg = v.tag as String
         if (locked()) return holdMenu(v, listOf(
@@ -3982,6 +4020,20 @@ class MainActivity : Activity() {
                 renderApps()
                 appRow.getChildAt(minOf(i, appRow.childCount - 1))?.requestFocus()
                 toast(getString(R.string.removed_from_row))
+            },
+            if (pkg.startsWith(HDMI)) null else getString(if (pkg in lockedApps()) R.string.app_unlock else R.string.app_lock) to {
+                val set = if (pkg in lockedApps()) lockedApps() - pkg else lockedApps() + pkg
+                prefs.edit().putStringSet("app_lock", set).apply()
+                if (!lockOn()) { // no PIN yet: the lock is meaningless without one, send to the PIN page
+                    toast(getString(R.string.app_lock_need_pin))
+                    openLauncherSettings(R.string.lock_layout)
+                } else toast(getString(if (pkg in set) R.string.app_lock_done else R.string.app_unlock_done))
+            },
+            if (pkg.startsWith(HDMI)) null else getString(if (pkg in hiddenApps()) R.string.app_unhide else R.string.app_hide) to {
+                val set = if (pkg in hiddenApps()) hiddenApps() - pkg else hiddenApps() + pkg
+                prefs.edit().putStringSet("app_hidden", set).apply()
+                renderApps()
+                if (pkg in set) toast(getString(R.string.app_hidden_done))
             },
             if (pkg.startsWith(HDMI)) null else getString(R.string.app_info) to {
                 openSettings(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null))
@@ -4336,13 +4388,47 @@ class MainActivity : Activity() {
         prefs.edit().putInt("n_" + a.pkg, prefs.getInt("n_" + a.pkg, 0) + 1).putLong("t_" + a.pkg, System.currentTimeMillis()).apply()
         if (prefs.getString("sort", "manual") == "usage") appsDirty = true
         val from = currentFocus?.takeIf { it.tag == a.pkg } // the tile that was pressed, not one a remote key opened it from
-        try {
-            if (a.pkg.startsWith(HDMI)) {
+        if (a.pkg.startsWith(HDMI)) {
+            try {
                 Remap.openInput(this, a.pkg.removePrefix(HDMI))
                 returnTo = focusKey(from)
-            } else startApp(a.launch, from)
+            } catch (e: Exception) {
+                android.util.Log.w("Plume", "input switch failed", e)
+            }
+            return
+        }
+        if (a.pkg in lockedApps()) return appPinGate { launchApp(a, from) } // the kids' app lock
+        launchApp(a, from)
+    }
+
+    private fun launchApp(a: App, from: View?) {
+        try {
+            startApp(a.launch, from)
         } catch (e: Exception) {
             (packageManager.getLeanbackLaunchIntentForPackage(a.pkg) ?: packageManager.getLaunchIntentForPackage(a.pkg))?.let { startApp(it, from) }
+        }
+    }
+
+    /**
+     * The kids' app lock's gate: a PIN page over the home screen (the settings panel dims the wallpaper behind
+     * it). Unlike [unlock] it grants nothing beyond [launch] — settings stay locked, and there is no time window.
+     */
+    private fun appPinGate(launch: () -> Unit) {
+        if (!lockOn()) return launch() // no PIN set: the menus live behind the lock, so this is just belt and braces
+        showPanel()
+        pinPage(getString(R.string.enter_pin), back = { closeLauncherSettings() }) { pin ->
+            val now = SystemClock.elapsedRealtime()
+            if (now < pinWaitUntil) return@pinPage getString(R.string.too_many_tries, (pinWaitUntil - now) / 1000 + 1)
+            if (!pinMatches(prefs.getString("lock_pin", null)!!, pin)) {
+                if (++pinFails < PIN_TRIES) return@pinPage getString(R.string.wrong_pin)
+                pinFails = 0
+                pinWaitUntil = now + 30_000L
+                return@pinPage getString(R.string.too_many_tries, 30)
+            }
+            pinFails = 0
+            closeLauncherSettings()
+            launch()
+            null
         }
     }
 
@@ -4910,12 +4996,12 @@ class MainActivity : Activity() {
     private fun queryWatchNext(): List<Prog> {
         val hidden = prefs.getStringSet("hidden_watch", emptySet())!!
         val watchNextOn = WATCH_NEXT !in prefs.getStringSet("ch_flip", emptySet())!!
-        val watchNext = if (watchNextOn) readPrograms(TvContract.WatchNextPrograms.CONTENT_URI, hidden) else emptyList()
+        val watchNext = if (watchNextOn) readPrograms(TvContract.WatchNextPrograms.CONTENT_URI, hidden, hiddenPkgs = hiddenApps()) else emptyList()
         val on = continueChannels()
         autoRowName = if (watchNextOn) null
             else on.map { it.third }.distinct().singleOrNull()?.takeUnless { it.equals("Continue Watching", ignoreCase = true) }
         val channels = on.flatMap { (id) ->
-            readPrograms(TvContract.buildPreviewProgramsUriForChannel(id), hidden, "ch$id")
+            readPrograms(TvContract.buildPreviewProgramsUriForChannel(id), hidden, "ch$id", hiddenApps())
         }
         val all = watchNext + channels
         android.util.Log.i("Plume", "continue watching: ${watchNext.size} from Watch Next, ${channels.size} from ${on.size} channels")
@@ -5018,7 +5104,7 @@ class MainActivity : Activity() {
     }
 
     /** Pairs of (sort key, item), see [watchSortKey]; a [group] is a channel, its rows sorted by [channelSortKey] and [byWeight]. */
-    private fun readPrograms(uri: Uri, hidden: Set<String>, group: String? = null): List<Pair<Long, Prog>> {
+    private fun readPrograms(uri: Uri, hidden: Set<String>, group: String? = null, hiddenPkgs: Set<String> = emptySet()): List<Pair<Long, Prog>> {
         val out = ArrayList<Triple<Long, Long, Prog>>()
         val cursor = contentResolver.query(uri, null, null, null, null)
         if (cursor == null) android.util.Log.w("Plume", "no TV provider answer for $uri") // provider hidden from us or missing
@@ -5029,6 +5115,7 @@ class MainActivity : Activity() {
                 if (str("browsable") == "0") continue
                 val title = str("title") ?: continue
                 if (hideKey(str("package_name"), title) in hidden) continue
+                if (str("package_name") in hiddenPkgs) continue // a hidden app's shows leave the row with it
                 val season = displayNumber(str("season_display_number"))
                 val episode = displayNumber(str("episode_display_number"))
                 val duration = num("duration_millis")
@@ -5248,6 +5335,11 @@ class MainActivity : Activity() {
     private fun open(p: Prog) {
         prefs.edit().putLong("t_${p.pkg}", System.currentTimeMillis()).apply()
         val from = currentFocus?.takeIf { it.getTag(R.id.watchRow) is Prog }
+        if (p.pkg != null && p.pkg in lockedApps()) return appPinGate { openNow(p, from) } // the kids' app lock
+        openNow(p, from)
+    }
+
+    private fun openNow(p: Prog, from: View?) {
         try {
             startApp(Intent.parseUri(p.intent, Intent.URI_INTENT_SCHEME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), from)
         } catch (e: Exception) {
