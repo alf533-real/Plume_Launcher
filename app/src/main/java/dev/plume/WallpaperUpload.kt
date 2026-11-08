@@ -65,14 +65,17 @@ internal class UploadServer(val code: String, private val temp: File, private va
             .associate { it.substringBefore(':').trim().lowercase() to it.substringAfter(':').trim() }
         val method = request.substringBefore(' ')
         val path = request.substringAfter(' ').substringBefore(' ')
+        val lang = headers["accept-language"]
+        fun text(en: String, zh: String) = replyText(lang, en, zh)
         when {
-            path != "/$code" -> reply(out, 404, "text/plain", "Not found. Scan the code on the TV again.")
+            path != "/$code" -> reply(out, 404, "text/plain", text("Not found. Scan the code on the TV again.", "未找到页面。请重新扫描电视上的二维码。"))
             method == "GET" -> reply(out, 200, "text/html; charset=utf-8", PAGE)
             method == "POST" -> {
                 val length = headers["content-length"]?.toLongOrNull() ?: -1
                 val video = headers["content-type"].orEmpty().startsWith("video/") // the browser sends the file's own type
                 val max = if (video) VIDEO_LIMIT else MAX_BYTES
-                if (length !in 1..max) return reply(out, 413, "text/plain", "That file is too big (${max / 1024 / 1024} MB at most).")
+                if (length !in 1..max) return reply(out, 413, "text/plain",
+                    text("That file is too big (${max / 1024 / 1024} MB at most).", "文件太大（最大 ${max / 1024 / 1024} MB）。"))
                 temp.outputStream().use { file ->
                     val buf = ByteArray(64 * 1024)
                     var left = length
@@ -88,10 +91,14 @@ internal class UploadServer(val code: String, private val temp: File, private va
                 } finally {
                     temp.delete()
                 }
-                if (name != null) reply(out, 200, "text/plain", "Added \"$name\" to your TV.")
-                else reply(out, 415, "text/plain", if (video) "Use an H.264 or HEVC MP4 video up to 1080p." else "That doesn't look like a photo the TV can open.")
+                if (name != null) reply(out, 200, "text/plain",
+                    text("Added \"$name\" to your TV. You can send another.", "已把“$name”添加到电视。还可以继续发送。"))
+                else reply(out, 415, "text/plain", if (video)
+                    text("Use an H.264 or HEVC MP4 video up to 1080p.", "请使用 H.264 或 HEVC 编码、1080p 以内的 MP4 视频。")
+                else
+                    text("That doesn't look like a photo the TV can open.", "这似乎不是电视能打开的照片。"))
             }
-            else -> reply(out, 405, "text/plain", "Not allowed")
+            else -> reply(out, 405, "text/plain", text("Not allowed", "不允许的请求"))
         }
     }
 
@@ -117,6 +124,7 @@ internal class UploadServer(val code: String, private val temp: File, private va
     private companion object {
         const val MAX_BYTES = 25L * 1024 * 1024
 
+        // The page picks its language in the phone's browser (navigator.language): Chinese texts for zh*, English otherwise.
         val PAGE = """
             <!doctype html>
             <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -130,23 +138,46 @@ internal class UploadServer(val code: String, private val temp: File, private va
               @media (prefers-color-scheme:dark){button{background:#f5f5f7;color:#111214}}
               button:disabled{opacity:.35} input{display:none} #s{min-height:1.5em}
             </style></head><body>
-            <h1>Add a wallpaper</h1>
-            <p>Pick a photo, or an H.264 or HEVC MP4 video up to 1080p and 350 MB. A photo shows on your TV a moment after you upload it; a video plays there first.</p>
+            <h1 id="h">Add a wallpaper</h1>
+            <p id="p">Pick a photo, or an H.264 or HEVC MP4 video up to 1080p and 350 MB. A photo shows on your TV a moment after you upload it; a video plays there first.</p>
             <label><input id="f" type="file" accept="image/*,video/mp4"><span id="n">Choose photo or video</span></label>
             <button id="b" disabled>Upload to TV</button>
             <div id="s"></div>
             <script>
+              const L={en:{title:'Plume wallpaper',h:'Add a wallpaper',
+                p:'Pick a photo, or an H.264 or HEVC MP4 video up to 1080p and 350 MB. A photo shows on your TV a moment after you upload it; a video plays there first.',
+                n:'Choose photo or video',b:'Upload to TV',up:'Uploading…',
+                err:'Couldn\'t reach the TV. Is the upload screen still open?',
+                added:(x)=>'Added \"'+x+'\" to your TV.',
+                tooBig:(m)=>'That file is too big ('+m+' MB at most).',
+                badVideo:'Use an H.264 or HEVC MP4 video up to 1080p.',
+                badPhoto:'That doesn\'t look like a photo the TV can open.'},
+                zh:{title:'Plume 壁纸',h:'添加壁纸',
+                p:'选择一张照片，或一个 H.264 / HEVC 编码、1080p 以内、350 MB 以内的 MP4 视频。照片上传后会立刻显示到电视上；视频会先在电视上试播。',
+                n:'选择照片或视频',b:'上传到电视',up:'正在上传…',
+                err:'连不上电视。电视上的上传界面还开着吗？',
+                added:(x)=>'已把“'+x+'”添加到电视。',
+                tooBig:(m)=>'文件太大（最大 '+m+' MB）。',
+                badVideo:'请使用 H.264 或 HEVC 编码、1080p 以内的 MP4 视频。',
+                badPhoto:'这似乎不是电视能打开的照片。'}};
+              const t=L[(navigator.language||'en').toLowerCase().startsWith('zh')?'zh':'en'];
+              document.title=t.title;document.getElementById('h').textContent=t.h;document.getElementById('p').textContent=t.p;
+              document.getElementById('b').textContent=t.b;document.getElementById('n').textContent=t.n;
               const f=document.getElementById('f'),b=document.getElementById('b'),s=document.getElementById('s'),n=document.getElementById('n');
-              f.onchange=()=>{b.disabled=!f.files.length;n.textContent=f.files.length?f.files[0].name:'Choose photo or video';s.textContent=''};
+              f.onchange=()=>{b.disabled=!f.files.length;n.textContent=f.files.length?f.files[0].name:t.n;s.textContent=''};
               b.onclick=async()=>{
-                b.disabled=true;s.textContent='Uploading…';
+                b.disabled=true;s.textContent=t.up;
                 try{const r=await fetch(location.pathname,{method:'POST',body:f.files[0]});
-                  s.textContent=(await r.text())+(r.ok?' You can send another.':'');}
-                catch(e){s.textContent='Couldn\'t reach the TV. Is the upload screen still open?';}
+                  s.textContent=(await r.text());}
+                catch(e){s.textContent=t.err;}
                 b.disabled=false;
               };
             </script></body></html>
         """.trimIndent()
+
+        // Replies to the POST, in the phone's Accept-Language: the page speaks for the buttons, these only finish its sentences.
+        fun replyText(acceptLanguage: String?, en: String, zh: String): String =
+            if (acceptLanguage?.lowercase()?.startsWith("zh") == true) zh else en
     }
 }
 
