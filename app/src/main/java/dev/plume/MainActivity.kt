@@ -2622,7 +2622,7 @@ class MainActivity : Activity() {
                 HomeOverride.running?.applyKeyFilter()
                 renderSettings(R.string.smooth_volume)
             },
-            R.string.default_launcher to Triple(getString(R.string.default_launcher), if (isDefaultHome()) "Plume" else getString(R.string.press_to_set)) { makeDefaultHome() },
+            R.string.default_launcher to Triple(getString(R.string.default_launcher), if (isDefaultHome()) "mzilo" else getString(R.string.press_to_set)) { makeDefaultHome() },
             // No update check here: this fork is not the app the upstream release would install. The row opens
             // this version's what's-new notes only.
             R.string.updates to Triple(getString(R.string.updates), getString(R.string.up_to_date_row, myVersion())) { showUpdates() },
