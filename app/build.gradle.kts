@@ -15,10 +15,10 @@ android {
         applicationId = "com.miaoz.plumecn"
         minSdk = 26
         targetSdk = 36
-        versionCode = 106
+        versionCode = 107
         // The -cn suffix keeps this build's version apart from upstream releases; the CHANGELOG lookup falls back
         // to the "## 1.7" section, whose entries ship as the what's-new notes.
-        versionName = "1.7.1-cn7"
+        versionName = "1.7.1-cn8"
         // What's new: only this version's section of CHANGELOG.md ships, one entry per line, ** marks kept for bold.
         // A ### heading ships as a line that starts with #. A fix release (1.7.1) ships its x.y section after its own,
         // so people who update from 1.6 still see what 1.7 brought.
