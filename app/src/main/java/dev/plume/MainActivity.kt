@@ -2606,7 +2606,7 @@ class MainActivity : Activity() {
                 showWeather()
                 renderSettings(R.string.weather_units)
             },
-            R.string.weather_location to Triple(getString(R.string.weather_location), if (manualCity()) prefs.getString("geo_city", null) ?: "" else "Automatic") { pickCity() },
+            R.string.weather_location to Triple(getString(R.string.weather_location), if (manualCity()) prefs.getString("geo_city", null) ?: "" else getString(R.string.automatic)) { pickCity() },
             R.string.screensaver to Triple(getString(R.string.screensaver), when {
                 downloading -> getString(R.string.downloading_gallery)
                 !galleryOn() -> screensaverName()
@@ -4766,12 +4766,17 @@ class MainActivity : Activity() {
         val top = (field.parent as LinearLayout).apply {
             if (status.isNotEmpty()) addView(label(status, 12f).apply { alpha = 0.6f; setPadding(dp(14), dp(8), 0, 0) })
         }
+        val chosen = prefs.getString("geo_city", null)?.takeIf { manualCity() }
+        // The city in use sits under Automatic even before any search, marked like Automatic is: coming back to
+        // this page used to show only the empty search box, so a picked city looked like it never stuck.
         val rows = listOf(page(getString(R.string.automatic_ip), if (manualCity()) "" else CHOSEN) {
             prefs.edit().remove("geo_manual").remove("geo_time").remove("wx_time").apply()
             refreshWeather()
             renderSettings(R.string.weather_location)
-        }) + found.orEmpty().map { c ->
-            page(c.name, c.where) {
+        }) + listOfNotNull(
+            chosen?.let { c -> page(c, CHOSEN) { } },
+        ) + found.orEmpty().map { c ->
+            page(c.name, if (c.name == chosen) CHOSEN else c.where) {
                 prefs.edit().putBoolean("geo_manual", true).putString("geo_city", c.name)
                     .putFloat("geo_lat", c.lat).putFloat("geo_lon", c.lon).remove("wx_time").apply()
                 refreshWeather()
