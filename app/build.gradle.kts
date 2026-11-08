@@ -15,17 +15,19 @@ android {
         applicationId = "com.miaoz.plumecn"
         minSdk = 26
         targetSdk = 36
-        versionCode = 111
+        versionCode = 112
         // The -cn suffix keeps this build's version apart from upstream releases; the CHANGELOG lookup falls back
         // to the "## 1.7" section, whose entries ship as the what's-new notes.
-        versionName = "1.7.1-cn12"
+        versionName = "1.7.1-cn13"
         // What's new: only this version's section of CHANGELOG.md ships, one entry per line, ** marks kept for bold.
         // A ### heading ships as a line that starts with #. A fix release (1.7.1) ships its x.y section after its own,
         // so people who update from 1.6 still see what 1.7 brought.
         val changelog = rootProject.file("CHANGELOG.md").readText().replace("\r", "")
         val section = { v: String -> changelog.substringAfter("\n## $v\n", "").substringBefore("\n## ") }
         val minor = versionName!!.split('.').take(2).joinToString(".")
-        val notes = (section(versionName!!) + if (minor != versionName) "\n" + section(minor) else "")
+        // A -cn release has its own Chinese section; only fall back to the upstream minor section when it doesn't,
+        // so the what's-new notes never mix languages.
+        val notes = section(versionName!!).ifEmpty { section(minor) }
             .lines().filter { it.startsWith("- ") || it.startsWith("### ") }
             .map { if (it.startsWith("### ")) "#" + it.removePrefix("### ") else it.removePrefix("- ") }
         require(notes.isNotEmpty()) { "CHANGELOG.md has no entries under \"## $versionName\"" }

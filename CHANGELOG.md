@@ -14,6 +14,11 @@ Write every entry in ASD-STE100 Simplified Technical English:
 
 Put changes that are not released under `## Unreleased`. Rename that heading to the version number when you release.
 
+## 1.7.1-cn13
+
+- 更新说明改为中文，以后每次更新都能看懂改了什么。
+- 修复：用触控方式打开设置后，PIN 输入面板可能收不到按键，像卡死一样。
+
 ## 1.7.1
 
 - **Photo of the day fix.** Plume no longer closes when you select **Photo of the day** before the photo downloads.
