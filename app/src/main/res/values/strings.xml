@@ -118,8 +118,9 @@
     <string name="checking">Checking…</string>
     <string name="lock_layout">PIN lock</string>
     <string name="plume_settings">mzilo settings</string>
+
     <string name="app_lock_title">Locked &amp; hidden apps</string>
-    <string name="app_lock_value">%1 locked · %2 hidden</string>
+    <string name="app_lock_value">%1$d locked · %2$d hidden</string>
     <string name="app_lock">Lock app</string>
     <string name="app_unlock">Unlock app</string>
     <string name="app_lock_done">Locked. The PIN is asked on open.</string>

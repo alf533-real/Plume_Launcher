@@ -117,8 +117,9 @@
     <string name="checking">正在检查…</string>
     <string name="lock_layout">PIN 锁</string>
     <string name="plume_settings">mzilo 设置</string>
+
     <string name="app_lock_title">已锁定与隐藏的应用</string>
-    <string name="app_lock_value">%1 个锁定 · %2 个隐藏</string>
+    <string name="app_lock_value">%1$d 个锁定 · %2$d 个隐藏</string>
     <string name="app_lock">锁定应用</string>
     <string name="app_unlock">解锁应用</string>
     <string name="app_lock_done">已锁定。打开时需要输入 PIN。</string>
