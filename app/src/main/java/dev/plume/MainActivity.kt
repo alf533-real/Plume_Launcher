@@ -4780,15 +4780,15 @@ class MainActivity : Activity() {
             if (status.isNotEmpty()) addView(label(status, 12f).apply { alpha = 0.6f; setPadding(dp(14), dp(8), 0, 0) })
         }
         val chosen = prefs.getString("geo_city", null)?.takeIf { manualCity() }
-        // The city in use sits under Automatic even before any search, marked like Automatic is: coming back to
+        // The city in use sits under Automatic on the way in, marked like Automatic is: coming back to
         // this page used to show only the empty search box, so a picked city looked like it never stuck.
+        // It's only on the entry view — inside search results it would sit between Automatic and the
+        // matches and catch the focus (and the OK) meant for the first result, so a pick looked dead.
         val rows = listOf(page(getString(R.string.automatic_ip), if (manualCity()) "" else CHOSEN) {
             prefs.edit().remove("geo_manual").remove("geo_time").remove("wx_time").apply()
             refreshWeather()
             renderSettings(R.string.weather_location)
-        }) + listOfNotNull(
-            chosen?.let { c -> page(c, CHOSEN) { } },
-        ) + found.orEmpty().map { c ->
+        }) + (if (found == null && chosen != null) listOf(page(chosen, CHOSEN) { }) else emptyList()) + found.orEmpty().map { c ->
             page(c.name, if (c.name == chosen) CHOSEN else c.where) {
                 prefs.edit().putBoolean("geo_manual", true).putString("geo_city", c.name)
                     .putFloat("geo_lat", c.lat).putFloat("geo_lon", c.lon).remove("wx_time").apply()
