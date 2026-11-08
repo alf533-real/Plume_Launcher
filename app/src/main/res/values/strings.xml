@@ -1,4 +1,5 @@
 <resources>
+    <string name="app_name">Plume CN</string>
     <string name="override_desc">Opens Plume whenever the Google TV home screen appears, so the Home button lands here.</string>
     <string name="delete_photo">Delete \"%1$s\"?</string>
     <string name="photo_added">Added \"%1$s\". Send another, or press Done.</string>
@@ -213,7 +214,7 @@
     <string name="help_screensaver">What the TV shows when nobody uses it for a while.</string>
     <string name="help_remote_home">Make Home open Plume, and change what the buttons on your remote do.</string>
     <string name="help_lock">A PIN that stops other people from changing your home screen.</string>
-    <string name="help_updates">Plume checks for a new version once a day. Install it here.</string>
+    <string name="help_updates">What changed in this version. This fork does not fetch updates from the original project.</string>
     <string name="help_finish_setup">Home still opens the TV\'s own home screen. Set it to open Plume.</string>
     <string name="help_location">For the weather, and for sunrise and sunset in Auto. Automatic finds it from your internet address.</string>
     <string name="help_rearrange">Move the apps in the row. You can also hold OK on an app.</string>

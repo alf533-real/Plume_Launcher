@@ -17,7 +17,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.database.ContentObserver
-import android.content.pm.PackageInstaller
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -202,6 +201,32 @@ internal fun <T> newestPerApp(items: List<Pair<Long, T>>, perApp: Int, app: (T) 
 }
 
 /**
+ * Which of the two arts an app publishes to load, as "to try first" and "the other one". The poster is the bigger
+ * artwork, the thumbnail a small preview, so the poster leads — but only while its shape is wide (0 is 16:9, 1 is 3:2,
+ * 2 is 4:3): a tall 2:3 poster on the 2:1 card shows as a strip down the middle. A wide thumbnail beats a tall poster.
+ * With no shape given at all the provider's default (16:9) is assumed, so the poster still leads. The other art is kept
+ * for when the first turns out smaller than the card (see [decode]): the wider picture wins, nothing is upscaled.
+ */
+internal fun pickArt(thumb: String?, poster: String?, thumbRatio: Int, posterRatio: Int): Pair<String?, String?> = when {
+    thumb == null -> poster to null
+    poster == null -> thumb to null
+    posterRatio in 0..2 -> poster to thumb
+    thumbRatio in 0..2 -> thumb to poster
+    else -> poster to thumb
+}
+
+/**
+ * The largest power of two by which [w] can shrink and still reach [cardW]: the decoded width lands between the card's
+ * width and twice that, so the card never stretches the picture past its own pixels.
+ */
+internal fun posterSampleSize(w: Int, cardW: Int): Int {
+    if (cardW <= 1 || w <= cardW) return 1
+    var sample = 1
+    while (w / (sample * 2) >= cardW) sample *= 2
+    return sample
+}
+
+/**
  * Whether an app's home-screen channel feeds Continue Watching. Channels named "Continue Watching" (Stremio's) start
  * on, every other one (Plex On Deck, a Stremio catalog) starts off; [flipped] holds the ones the user switched.
  */
@@ -263,20 +288,7 @@ internal fun iconStyleOf(stored: String?, oldColour: Boolean) =
 /** Allowed to start an activity from the background because the Home button service is bound. */
 class Updated : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
-        File(c.cacheDir, ApkProvider.NAME).delete() // the downloaded update (see installUpdate)
         c.startActivity(Intent(c, MainActivity::class.java).setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        dropSessions(c)
-    }
-}
-
-/** Sessions the TV's own installer left waiting for the confirm box (see MainActivity.openApk). */
-internal fun dropSessions(c: Context) {
-    val installer = c.packageManager.packageInstaller
-    installer.mySessions.forEach {
-        try {
-            installer.abandonSession(it.sessionId)
-        } catch (_: Exception) { // already gone
-        }
     }
 }
 
@@ -297,7 +309,8 @@ class MainActivity : Activity() {
     }
     /** [group]: what shares the front places in Continue Watching, the app or, for an app channel, that channel. */
     private class Prog(val title: String, val sub: String, val progress: Int, val image: String?, val intent: String?, val pkg: String?,
-                       val group: String? = pkg, val wide: Boolean = true) // wide: the art can be a wallpaper (see ShowsWall.wide)
+                       val group: String? = pkg, val wide: Boolean = true, // wide: the art can be a wallpaper (see ShowsWall.wide)
+                       val altImage: String? = null) // the other art the app publishes, tried when [image] is too small (see pickArt)
 
     private val prefs by lazy { getSharedPreferences("home", MODE_PRIVATE) }
     private val io = Executors.newSingleThreadExecutor()
@@ -309,7 +322,9 @@ class MainActivity : Activity() {
     private val posterIo = Executors.newFixedThreadPool(3)
     private val loading = java.util.Collections.synchronizedSet(HashSet<String>())
     private val ui = Handler(Looper.getMainLooper())
-    private val posters = object : LruCache<String, Bitmap>(6 * 1024 * 1024) {
+    private val posters = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
+        // Posters now decode to the card's real size (up to twice that), so 4K cards are worth more than 6 MB; the
+        // cache holds the shown four and some ahead, and evicts quietly when a bigger batch comes in.
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
 
@@ -515,7 +530,6 @@ class MainActivity : Activity() {
         updateFeatured()
         // Gallery chosen but its paintings missing (updated from a version that bundled them): fetch them.
         if (galleryOn() && photoScreensaver() == null && !aerialScreensaverOn() && !paintingsReady(this)) downloadPaintings {}
-        checkUpdate(force = false)
         Bing.onChanged = bingChanged
         Bing.refresh(applicationContext, prefs)
         ui.post { updateBadge() } // after layout, so the icon has its size
@@ -536,7 +550,6 @@ class MainActivity : Activity() {
 
     @Deprecated("Only used for the default-home role request and the TV's own installer")
     override fun onActivityResult(code: Int, result: Int, data: Intent?) {
-        if (code == INSTALL_REQUEST) installerClosed()
         if (code == ROLE_REQUEST && settingsScrim.visibility == View.VISIBLE) renderSettings(R.string.default_launcher)
         if (code == ROLE_REQUEST && setupStep == 1) {
             setupStep = 0
@@ -602,7 +615,7 @@ class MainActivity : Activity() {
         Settings.Secure.putInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
     }
 
-    /** Compared as components: Settings may store us in short form (dev.plume/.HomeOverride). */
+    /** Compared as components: Settings may store us in short form (com.miaoz.plumecn/.HomeOverride). */
     private fun homeServiceOn(): Boolean {
         val me = ComponentName(this, HomeOverride::class.java)
         return Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
@@ -952,7 +965,6 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         // Home pressed in Android's settings means home, not settings; the screensaver's end comes in as Home too.
         if (intent.hasCategory(Intent.CATEGORY_HOME) && !prefs.getBoolean("return_dream", false)) prefs.edit().remove("return_settings").apply()
-        if (intent.action == UPDATE_STATUS) return installStatus(intent)
         if (fakeSetup(intent)) return
         if (homeTest != 0 && intent.hasCategory(Intent.CATEGORY_HOME)) { // the Home press reached us: setup works
             homeTest = 0
@@ -2611,13 +2623,9 @@ class MainActivity : Activity() {
                 renderSettings(R.string.smooth_volume)
             },
             R.string.default_launcher to Triple(getString(R.string.default_launcher), if (isDefaultHome()) "Plume" else getString(R.string.press_to_set)) { makeDefaultHome() },
-            R.string.updates to Triple(getString(R.string.updates), when {
-                updating -> getString(R.string.updating)
-                checking -> getString(R.string.checking)
-                availableUpdate() != null -> getString(R.string.update_available_row, availableUpdate())
-                notesUnseen() -> getString(R.string.whats_new_title, myVersion())
-                else -> getString(R.string.up_to_date_row, myVersion())
-            }) { showUpdates() },
+            // No update check here: this fork is not the app the upstream release would install. The row opens
+            // this version's what's-new notes only.
+            R.string.updates to Triple(getString(R.string.updates), getString(R.string.up_to_date_row, myVersion())) { showUpdates() },
             R.string.lock_layout to Triple(getString(R.string.lock_layout), toggle(lockOn())) {
                 if (!lockOn()) return@Triple setLock()
                 prefs.edit().remove("lock_pin").apply()
@@ -4612,57 +4620,17 @@ class MainActivity : Activity() {
         }
     }
 
-    // ---------- updates (GitHub releases) ----------
-    // Checked once a day from the home screen; a new version is announced once, then waits in settings.
-    // The APK goes to a file in the cache, then into an install session. TVs without the confirm box open that file in
-    // their own installer (see ApkProvider). The file is deleted when an update fails or is cancelled, and by the new
-    // version when it starts (see Updated).
-
-    @Volatile private var checking = false
-    @Volatile private var updating = false
+    // ---------- what's new ----------
+    // This fork does not check GitHub or install anything: the upstream release it would fetch is a different app
+    // (another applicationId, another signature). The notes below only say what this version changed.
 
     private fun myVersion() = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
 
-    /** The newer version a check found, if any (null again once it's installed). */
-    private fun availableUpdate() = prefs.getString("upd_ver", null)?.takeIf { newerVersion(it, myVersion()) }
-
-    private fun checkUpdate(force: Boolean) {
-        if (checking || !force && System.currentTimeMillis() - prefs.getLong("upd_time", 0) < 24 * 3600_000L) return
-        checking = true
-        if (force) renderSettings(R.string.updates)
-        io.execute {
-            val latest = try {
-                getJson("https://api.github.com/repos/$REPO/releases/latest").getString("tag_name").removePrefix("v")
-            } catch (e: Exception) {
-                android.util.Log.w("Plume", "update check failed ($e)")
-                null
-            }
-            if (latest != null) prefs.edit().putString("upd_ver", latest).putLong("upd_time", System.currentTimeMillis()).apply()
-            ui.post {
-                if (isDestroyed) return@post
-                checking = false
-                val ver = availableUpdate()
-                if (ver != null && (force || prefs.getString("upd_told", null) != ver)) {
-                    prefs.edit().putString("upd_told", ver).apply()
-                    if (!force) toast(getString(R.string.update_available_toast, ver), long = true)
-                } else if (force) {
-                    toast(if (latest == null) getString(R.string.update_check_failed) else getString(R.string.up_to_date_toast))
-                }
-                updateBadge()
-                if (settingsScrim.visibility == View.VISIBLE) renderSettings(R.string.updates)
-            }
-        }
-    }
-
-    /** What's new in this version (the CHANGELOG.md section the build put in), with check or install on top. */
+    /** What's new in this version (the CHANGELOG.md section the build put in). */
     private fun showUpdates() {
         prefs.edit().putString("seen_notes", myVersion()).apply()
         updateBadge()
-        val ver = availableUpdate()
-        showPage(getString(R.string.whats_new_title, myVersion()), listOf(
-            if (ver != null) page(getString(R.string.install_update, ver)) { installUpdate(ver) }
-            else page(getString(R.string.check_updates)) { checkUpdate(force = true) },
-        ), back = { renderSettings(R.string.updates) })
+        showPage(getString(R.string.whats_new_title, myVersion()), emptyList(), back = { renderSettings(R.string.updates) })
         // Focusable, lit on focus, so Down walks through notes longer than the panel and it scrolls along.
         getString(R.string.whats_new).split('\n').forEach {
             if (it.startsWith("#")) {
@@ -4707,117 +4675,14 @@ class MainActivity : Activity() {
 
     private val badge by lazy { GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(BADGE) } }
 
-    /** A dot on the Plume settings icon while an update waits or its notes are unread. */
+    /** A dot on the Plume settings icon while its notes are unread. */
     private fun updateBadge() {
         val icon = findViewById<ImageView>(R.id.launcherSettings)
         icon.overlay.clear()
-        if (availableUpdate() == null && !notesUnseen()) return
+        if (!notesUnseen()) return
         val size = dp(9)
         badge.setBounds(icon.width - size - dp(3), dp(3), icon.width - dp(3), dp(3) + size)
         icon.overlay.add(badge)
-    }
-
-    private fun installUpdate(ver: String) {
-        if (updating) return
-        if (!packageManager.canRequestPackageInstalls()) {
-            toast(getString(R.string.allow_installs), long = true, system = true)
-            return openSettings(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
-        }
-        updating = true
-        renderSettings(R.string.updates)
-        val installer = packageManager.packageInstaller
-        val apk = File(cacheDir, ApkProvider.NAME)
-        io.execute {
-            val ok = try {
-                apk.delete()
-                openStream("https://github.com/$REPO/releases/download/v$ver/Plume.apk").use { input ->
-                    apk.outputStream().use { input.copyTo(it) }
-                }
-                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-                params.setAppPackageName(packageName)
-                // Android 12+ can skip the confirm box when we're the app's installer; otherwise Android asks.
-                if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-                val id = installer.createSession(params)
-                installer.openSession(id).use { session ->
-                    try {
-                        apk.inputStream().use { input ->
-                            session.openWrite("Plume.apk", 0, apk.length()).use { out ->
-                                input.copyTo(out)
-                                session.fsync(out)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        session.abandon()
-                        throw e
-                    }
-                    val done = PendingIntent.getActivity(this, 0,
-                        Intent(this, MainActivity::class.java).setAction(UPDATE_STATUS),
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
-                    session.commit(done.intentSender)
-                }
-                true
-            } catch (e: Exception) {
-                android.util.Log.w("Plume", "update download failed ($e)")
-                apk.delete()
-                false
-            }
-            ui.post {
-                if (isDestroyed) return@post
-                if (!ok) {
-                    updating = false
-                    toast(getString(R.string.update_download_failed), long = true)
-                }
-                if (settingsScrim.visibility == View.VISIBLE) renderSettings(R.string.updates)
-            }
-        }
-    }
-
-    /** The install session reports back here: show Android's confirm box (or the TV's own installer), or say why it failed. */
-    private fun installStatus(intent: Intent) {
-        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-            try {
-                @Suppress("DEPRECATION")
-                intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)?.let { startActivity(it) }
-                return
-            } catch (_: ActivityNotFoundException) {
-                // Some TVs (Xiaomi HyperOS) have no confirm box: their own installer takes the file instead.
-                return openApk()
-            }
-        }
-        updating = false
-        if (status != PackageInstaller.STATUS_SUCCESS) {
-            File(cacheDir, ApkProvider.NAME).delete()
-            val why = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-            android.util.Log.w("Plume", "update install failed: $status $why")
-            if (status != PackageInstaller.STATUS_FAILURE_ABORTED) {
-                toast(getString(R.string.update_install_failed), long = true)
-            }
-        }
-        if (settingsScrim.visibility == View.VISIBLE) renderSettings(R.string.updates)
-    }
-
-    /** Opens the file in the TV's own installer, for a TV without the confirm box. */
-    private fun openApk() {
-        updating = false
-        try {
-            startActivityForResult(Intent(Intent.ACTION_VIEW)
-                .setDataAndType(ApkProvider.uri(this), "application/vnd.android.package-archive")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), INSTALL_REQUEST)
-        } catch (_: Exception) {
-            installerClosed()
-            toast(getString(R.string.update_install_failed), long = true)
-        }
-        if (settingsScrim.visibility == View.VISIBLE) renderSettings(R.string.updates)
-    }
-
-    /**
-     * Only now drops the waiting session: dropping it sends its result back to this activity, which would bring Plume
-     * back over the installer. After a successful update Plume restarts instead, and Updated drops it.
-     */
-    private fun installerClosed() {
-        dropSessions(this)
-        File(cacheDir, ApkProvider.NAME).delete()
     }
 
     // ---------- weather (under the date) ----------
@@ -5157,8 +5022,11 @@ class MainActivity : Activity() {
                 ).joinToString(" - ")
                 val progress = if (duration > 0 && position >= 1000) (position * 100 / duration).toInt().coerceIn(0, 100) else 0
                 val pkg = str("package_name")
-                val wide = ShowsWall.wide(str("thumbnail_uri") != null, num("poster_art_aspect_ratio").toInt())
-                val prog = Prog(title, sub, progress, str("thumbnail_uri") ?: str("poster_art_uri"), str("intent_uri"), pkg, group ?: pkg, wide)
+                val thumb = str("thumbnail_uri")
+                val poster = str("poster_art_uri")
+                val wide = ShowsWall.wide(thumb != null, num("poster_art_aspect_ratio").toInt())
+                val (art, altArt) = pickArt(thumb, poster, num("thumbnail_aspect_ratio").toInt(), num("poster_art_aspect_ratio").toInt())
+                val prog = Prog(title, sub, progress, art, str("intent_uri"), pkg, group ?: pkg, wide, altImage = altArt)
                 val engaged = num("last_engagement_time_utc_millis")
                 out += Triple(num("weight"),
                     if (group == null) watchSortKey(num("watch_next_type"), engaged) else channelSortKey(engaged, prefs.getLong("t_$pkg", 0)), prog)
@@ -5276,13 +5144,16 @@ class MainActivity : Activity() {
         }
     }
 
+    /** One Continue Watching card's width in real pixels: four across with 96 dp of margins (see [watchCard]). */
+    private fun cardPx() = (resources.displayMetrics.widthPixels - dp(96) - dp(GRID_GAP) * 3) / 4
+
     /**
      * Four posters across, each two apps-row columns wide. Progress sits on the artwork's bottom edge;
      * title and details (source, episode, time left) go underneath.
      */
     private fun watchCard(p: Prog, gapBefore: Boolean): View {
         val gap = dp(GRID_GAP)
-        val w = (resources.displayMetrics.widthPixels - dp(96) - gap * 3) / 4
+        val w = cardPx()
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = false
@@ -5340,7 +5211,7 @@ class MainActivity : Activity() {
                 }
             })
         }
-        loadPoster(img, p.image)
+        loadPoster(img, p)
         return col
     }
 
@@ -5366,14 +5237,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun loadPoster(v: ImageView, uri: String?) {
-        if (uri == null) return
+    private fun loadPoster(v: ImageView, p: Prog) {
+        val uri = p.image ?: return
         posters.get(uri)?.let { v.setImageBitmap(it); return }
-        v.tag = uri
+        v.tag = p
         if (!loading.add(uri)) return // already on its way
         posterIo.execute {
             val bmp = try {
-                decode(uri)
+                decode(uri, p.altImage)
             } catch (e: Exception) {
                 android.util.Log.w("TvHome", "poster failed: $uri ($e)") // retried by retryPosters()
                 null
@@ -5381,7 +5252,7 @@ class MainActivity : Activity() {
                 loading.remove(uri)
             } ?: return@execute
             posters.put(uri, bmp)
-            ui.post { if (!isDestroyed && v.tag == uri) v.setImageBitmap(bmp) }
+            ui.post { if (!isDestroyed && v.tag == p) v.setImageBitmap(bmp) }
         }
     }
 
@@ -5389,22 +5260,41 @@ class MainActivity : Activity() {
     private fun retryPosters() {
         for (i in 0 until watchRow.childCount) {
             val img = ((watchRow.getChildAt(i) as? ViewGroup)?.getChildAt(0) as? ViewGroup)?.getChildAt(0) as? ImageView ?: continue
-            if (img.drawable == null) loadPoster(img, img.tag as? String)
+            if (img.drawable == null) loadPoster(img, img.tag as? Prog ?: continue)
         }
     }
 
-    /** Downsample to card size in RGB_565 so a dozen posters stay around 1-2 MB. */
-    private fun decode(uri: String): Bitmap? {
-        val bytes = openStream(uri).use { it.readBytes() }
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        var sample = 1
-        while (bounds.outWidth / (sample * 2) >= dp(220)) sample *= 2
+    /**
+     * Downsamples to the card size in RGB_565 so a dozen posters stay around 1-2 MB. The decode lands between the
+     * card's width and twice that, so the card never stretches the picture. When the first art comes in smaller than
+     * the card — a preview thumbnail, or a narrow poster — [alt], the other art the app publishes, is fetched too and
+     * the wider picture wins. What the apps themselves only publish small shows small: nothing is scaled up.
+     */
+    private fun decode(uri: String, alt: String?): Bitmap? {
+        var bytes = openStream(uri).use { it.readBytes() }
+        var wide = bounds(bytes)
+        val cardW = cardPx()
+        if (wide < cardW && alt != null && alt != uri) {
+            try {
+                val altBytes = openStream(alt).use { it.readBytes() }
+                val altW = bounds(altBytes)
+                if (altW > wide) { bytes = altBytes; wide = altW }
+            } catch (e: Exception) {
+                android.util.Log.w("TvHome", "alt poster failed: $alt ($e)") // keep the first art
+            }
+        }
         val opts = BitmapFactory.Options().apply {
-            inSampleSize = sample
+            inSampleSize = posterSampleSize(wide, cardW)
             inPreferredConfig = Bitmap.Config.RGB_565
         }
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+    }
+
+    /** The pixel width of a picture, read from its bytes alone. */
+    private fun bounds(bytes: ByteArray): Int {
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
+        return o.outWidth
     }
 
     private fun openStream(uri: String): InputStream =
@@ -5540,7 +5430,6 @@ class MainActivity : Activity() {
         const val TV_LISTINGS = "android.permission.READ_TV_LISTINGS"
         const val WRITE_SECURE = "android.permission.WRITE_SECURE_SETTINGS"
         const val ROLE_REQUEST = 2
-        const val INSTALL_REQUEST = 4
         val ROW_ALIGN = linkedMapOf( // setting -> its name, and the row's gravity in the scroller
             "left" to (R.string.align_left to Gravity.START),
             "centre" to (R.string.align_centre to Gravity.CENTER_HORIZONTAL),
@@ -5645,7 +5534,6 @@ class MainActivity : Activity() {
         )
         const val CHOSEN = "✓"
         const val REPO = "aradhyas8/Plume_Launcher"
-        const val UPDATE_STATUS = "dev.plume.UPDATE_STATUS"
         const val WRITE_EPG ="com.android.providers.tv.permission.WRITE_EPG_DATA"
         const val TV_SETTINGS = "com.android.tv.settings"
         const val HDMI = "hdmi:" // App.pkg prefix for HDMI device tiles; the rest is the TV input id

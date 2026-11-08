@@ -52,7 +52,7 @@ class HomeWatch(private val fire: Boolean, private val googleHomes: () -> Set<St
     }
 
     companion object {
-        private const val PLUME = "dev.plume"
+        internal const val PLUME = "com.miaoz.plumecn" // this fork's applicationId (the original Plume is dev.plume)
         const val GOOGLE_TV = "com.google.android.apps.tv.launcherx"
         private const val AMAZON = "com.amazon.tv.launcher"
         private const val OLD_AMAZON = "com.amazon.firelauncher"
