@@ -2883,6 +2883,9 @@ class MainActivity : Activity() {
             id = View.generateViewId()
             gravity = Gravity.CENTER
             isFocusable = true
+            // Touch (or adb input tap) puts the window in touch mode, where a plain focusable view
+            // ignores requestFocus — without this the PIN row can never receive the digit keys.
+            isFocusableInTouchMode = true
             boxes.forEach { addView(it, LinearLayout.LayoutParams(dp(48), dp(56)).apply { marginStart = dp(6); marginEnd = dp(6) }) }
         }
         fun draw() = boxes.forEachIndexed { i, b ->
