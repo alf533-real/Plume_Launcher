@@ -294,6 +294,19 @@ class Updated : BroadcastReceiver() {
 
 internal fun <T> preferTvApps(tv: List<T>, other: List<T>, pkg: (T) -> String) = (tv + other).distinctBy(pkg)
 
+/**
+ * Tencent's cover CDN (hosts under qpic.cn) scales covers by a trailing width parameter: ".../408" is a
+ * 408-px JPEG, ".../0" the original — 1080 px for the covers seen in the wild. At the card's size the 408
+ * variant shows JPEG blocking while the original downscales clean (A/B tested on a BRAVIA VH1), so the
+ * card fetches the original when it can and falls back to the given URI when the fetch fails. Only this
+ * CDN is rewritten; every other source keeps its own URI. Returns null when there is nothing to rewrite.
+ */
+internal fun hdCoverUrl(uri: String?): String? {
+    if (uri == null || !uri.contains("qpic.cn/")) return null
+    val tail = uri.substringAfterLast('/')
+    return if (tail.isNotEmpty() && tail.all(Char::isDigit)) uri.substringBeforeLast('/') + "/0" else null
+}
+
 class MainActivity : Activity() {
 
     /**
@@ -5275,15 +5288,24 @@ class MainActivity : Activity() {
      * the card — a preview thumbnail, or a narrow poster — [alt], the other art the app publishes, is fetched too and
      * the wider picture wins. What the apps themselves only publish small shows small: nothing is scaled up.
      */
-    private fun decode(uri: String, alt: String?): Bitmap? {
-        var bytes = openStream(uri).use { it.readBytes() }
-        var wide = bounds(bytes)
-        val cardW = cardPx()
-        if (wide < cardW && alt != null && alt != uri) {
-            try {
-                val altBytes = openStream(alt).use { it.readBytes() }
-                val altW = bounds(altBytes)
-                if (altW > wide) { bytes = altBytes; wide = altW }
+
+private fun decode(uri: String, alt: String?): Bitmap? {
+    val hd = hdCoverUrl(uri)
+    val raw = if (hd != null) try {
+        openStream(hd).use { it.readBytes() }
+    } catch (e: Exception) {
+        android.util.Log.w("TvHome", "hd cover failed: $hd ($e)") // fall back to the given URI
+        null
+    } ?: openStream(uri).use { it.readBytes() } else openStream(uri).use { it.readBytes() }
+    var bytes = raw
+    var wide = bounds(bytes)
+    val cardW = cardPx()
+    if (wide < cardW && alt != null && alt != uri) {
+        val altHd = hdCoverUrl(alt) ?: alt
+        try {
+            val altBytes = openStream(altHd).use { it.readBytes() }
+            val altW = bounds(altBytes)
+            if (altW > wide) { bytes = altBytes; wide = altW }
             } catch (e: Exception) {
                 android.util.Log.w("TvHome", "alt poster failed: $alt ($e)") // keep the first art
             }

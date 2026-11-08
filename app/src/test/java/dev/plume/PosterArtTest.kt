@@ -54,3 +54,26 @@ class PosterArtTest {
         assertEquals(1, posterSampleSize(0, 888))
     }
 }
+
+class HdCoverUrlTest {
+    private val qpic = "http://vcover-hz-pic.puui.qpic.cn/vcover_hz_pic/0/mzc00200zsqz54y/408"
+
+    @Test fun rewritesTencentWidthsToTheOriginal() {
+        assertEquals("http://vcover-hz-pic.puui.qpic.cn/vcover_hz_pic/0/mzc00200zsqz54y/0", hdCoverUrl(qpic))
+        assertEquals("http://vcover-hz-pic.puui.qpic.cn/vcover_hz_pic/0/mzc00200zsqz54y/0",
+            hdCoverUrl("http://vcover-hz-pic.puui.qpic.cn/vcover_hz_pic/0/mzc00200zsqz54y/260"))
+    }
+
+    @Test fun anyWidthRewritesToTheOriginal() {
+        assertEquals(qpic.replace("/408", "/0"), hdCoverUrl(qpic)) // 408 rewrites
+        val zero = "http://vcover-hz-pic.puui.qpic.cn/vcover_hz_pic/0/mzc00200zsqz54y/0"
+        assertEquals(zero, hdCoverUrl(zero)) // /0 rewrites to itself: the card gets the same picture
+    }
+
+    @Test fun leavesOtherSourcesAlone() {
+        assertEquals(null, hdCoverUrl(null))
+        assertEquals(null, hdCoverUrl("content://com.example/art/12"))
+        assertEquals(null, hdCoverUrl("https://example.com/cover.jpg"))
+        assertEquals(null, hdCoverUrl("http://vcover-hz-pic.puui.qpic.cn/vcover_hz_pic/0/mzc00200zsqz54y/orig")) // non-numeric tail
+    }
+}
