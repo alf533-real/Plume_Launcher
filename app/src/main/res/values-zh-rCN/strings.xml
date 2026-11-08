@@ -224,7 +224,7 @@
     <string name="help_channels">开启或关闭应用添加的频道，例如“推荐”。</string>
     <string name="help_hidden_shows">你从行中隐藏的节目。按 OK 全部重新显示。</string>
     <string name="help_start_after">打开 Android 设置，在那里调整电视的等待时长。</string>
-    <string name="help_home_button">按 HOME 键打开 mzilo。长按 HOME 键打开 Google TV 的信息面板。</string>
+    <string name="help_home_button">按 HOME 键打开 mzilo。长按 HOME 键可重新选择主屏幕应用。</string>
     <string name="help_default_launcher">在 Android TV 上，mzilo 可以成为主屏幕应用。Google TV 保留自己的主屏幕，请改用“HOME 键打开 mzilo”。</string>
     <string name="help_run_setup">重新执行一遍 HOME 键设置。</string>
     <string name="help_smooth_volume">长按音量键可连续调节。这会让 HOME 键打开 mzilo 慢约一秒。设置遥控器按键时自动关闭。</string>
@@ -246,7 +246,7 @@
     <string name="setup_scan_help">分步帮助</string>
     <string name="setup_done_title">HOME 键设置完成</string>
     <string name="setup_done_body">现在按遥控器上的 HOME 键就会打开 mzilo。</string>
-    <string name="setup_done_body_service">现在按遥控器上的 HOME 键就会打开 mzilo。长按 HOME 键可打开 Google TV 信息面板。</string>
+    <string name="setup_done_body_service">现在按遥控器上的 HOME 键就会打开 mzilo。长按 HOME 键可重新选择主屏幕应用。</string>
     <string name="setup_continue">继续</string>
     <string name="setup_not_now">暂不</string>
     <string name="setup_skip_check">跳过此项检查</string>

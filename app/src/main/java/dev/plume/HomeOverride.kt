@@ -2,13 +2,16 @@ package dev.plume
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.role.RoleManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 
@@ -63,9 +66,31 @@ class HomeOverride : AccessibilityService() {
         if (e.keyCode != KeyEvent.KEYCODE_HOME) return remap(e)
         // Decided on release, by how long it was held: this TV's remote doesn't reliably send key repeats.
         if (e.action == KeyEvent.ACTION_UP && !e.isCanceled) {
-            if (e.eventTime - e.downTime < LONG_PRESS_MS) goHome() else performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+            if (e.eventTime - e.downTime < LONG_PRESS_MS) goHome() else startHomePicker()
         }
         return true
+    }
+
+    /**
+     * Holding Home used to open the system notification panel (GLOBAL_ACTION_NOTIFICATIONS), which on this
+     * TV renders half off-screen and half-drawn. What holding Home did before this service existed was the
+     * system's home-app picker — restore that: the role dialog on Android 10+ is the system's own "choose
+     * your home app" menu; older versions get the home page of the settings app.
+     */
+    private fun startHomePicker() {
+        if (Build.VERSION.SDK_INT >= 29) {
+            val rm = getSystemService(RoleManager::class.java)
+            if (rm.isRoleAvailable(RoleManager.ROLE_HOME)) {
+                startActivity(rm.createRequestRoleIntent(RoleManager.ROLE_HOME)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return
+            }
+        }
+        try {
+            startActivity(Intent(Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) {
+            goHome() // a TV without even the home-settings page: holding Home then just lands here
+        }
     }
 
     /** Keys the user changed in Plume settings (see [Remap]); any other key goes on to the system untouched. */

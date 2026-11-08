@@ -228,7 +228,7 @@
     <string name="help_channels">Turn on or off the channels that apps add, like Recommended.</string>
     <string name="help_hidden_shows">Shows you hid from the row. Press OK to show all of them again.</string>
     <string name="help_start_after">Opens the Android settings where you set how long the TV waits.</string>
-    <string name="help_home_button">Home opens mzilo. Hold Home to open the TV\'s own dashboard.</string>
+    <string name="help_home_button">Home opens mzilo. Hold Home to pick your home app.</string>
     <string name="help_default_launcher">On Android TV, mzilo can be the home app. Google TV keeps its own: use Home opens mzilo there.</string>
     <string name="help_run_setup">Go through the Home button setup again.</string>
     <string name="help_smooth_volume">Hold Volume to keep changing it. Home then takes about a second longer to open mzilo. Off while remote keys are set.</string>
@@ -250,7 +250,7 @@
     <string name="setup_scan_help">Step-by-step help</string>
     <string name="setup_done_title">Home is set</string>
     <string name="setup_done_body">Home on your remote now opens mzilo.</string>
-    <string name="setup_done_body_service">Home on your remote now opens mzilo. Hold Home for the Google TV dashboard.</string>
+    <string name="setup_done_body_service">Home on your remote now opens mzilo. Hold Home to pick your home app.</string>
     <string name="setup_continue">Continue</string>
     <string name="setup_not_now">Not now</string>
     <string name="setup_skip_check">Skip this check</string>
