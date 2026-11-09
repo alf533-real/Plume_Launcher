@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Self-update: this app installs its own newer release through the system PackageInstaller. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Uninstall an app from its hold menu. -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
@@ -67,6 +69,14 @@
         </activity>
 
         <!-- For launchers that list only LAUNCHER apps. -->
+        <!-- Verdict of an in-app update install (success ends this process; failures surface a toast) -->
+        <receiver
+            android:name=".UpdateResultReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="dev.plume.INSTALL_RESULT" />
+            </intent-filter>
+        </receiver>
         <activity-alias
             android:name=".LauncherEntry"
             android:targetActivity=".MainActivity"

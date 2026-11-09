@@ -14,6 +14,10 @@ Write every entry in ASD-STE100 Simplified Technical English:
 
 Put changes that are not released under `## Unreleased`. Rename that heading to the version number when you release.
 
+## 1.7.1-cn14
+
+- 应用支持在线更新了：设置 → 更新 页会自动检查新版本，一键下载安装，不用再连电脑。
+
 ## 1.7.1-cn13
 
 - 更新说明改为中文，以后每次更新都能看懂改了什么。

@@ -4754,6 +4754,88 @@ class MainActivity : Activity() {
         }
         settingsList.getChildAt(0).nextFocusDownId = View.NO_ID // showPage stops Down at its last row
         settingsList.getChildAt(settingsList.childCount - 1).let { it.id = View.generateViewId(); it.nextFocusDownId = it.id }
+        checkForUpdate()
+    }
+
+    /** Runs on the What's-new page: asks the fork's release source for a newer version and,
+     *  when there is one, offers the download-and-install row. Silent, no tracking. */
+    private fun checkForUpdate() {
+        val status = label(getString(R.string.update_checking), 13f).apply {
+            alpha = 0.6f
+            setPadding(dp(14), dp(16), dp(14), dp(4))
+        }
+        settingsList.addView(status)
+        io.execute {
+            val found = Updater.check(packageManager.getPackageInfo(packageName, 0).longVersionCode)
+            ui.post {
+                if (isDestroyed || pageBack == null || !status.isAttachedToWindow) return@post // page closed
+                if (found == null) {
+                    status.text = getString(R.string.update_uptodate)
+                    return@post
+                }
+                status.visibility = View.GONE
+                val (code, name) = found
+                val btn = label(getString(R.string.update_install_btn, name), 14f).apply {
+                    setTypeface(typeface, Typeface.BOLD)
+                    gravity = Gravity.CENTER
+                    setPadding(dp(14), dp(14), dp(14), dp(14))
+                    isFocusable = true
+                    // tap-opened settings put the window in touch mode; without this the
+                    // button ignores requestFocus and OK goes nowhere
+                    isFocusableInTouchMode = true
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat(); setColor(0x2EFFFFFF)
+                    }
+                    setOnFocusChangeListener { v, f ->
+                        v.background = android.graphics.drawable.GradientDrawable().apply {
+                            cornerRadius = dp(10).toFloat(); setColor(if (f) 0x46FFFFFF else 0x2EFFFFFF)
+                        }
+                    }
+                    setOnClickListener { performUpdate(code) }
+                }
+                settingsList.addView(btn, LinearLayout.LayoutParams(MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
+                btn.requestFocus()
+            }
+        }
+    }
+
+    /** Downloads the published APK and hands it to the system installer (one OK on the confirm dialog).
+     *  First run: Android requires the "install unknown apps" toggle for this app; we open its settings page. */
+    private fun performUpdate(code: Long) {
+        android.util.Log.w("Updater", "performUpdate code=" + code)
+        if (!packageManager.canRequestPackageInstalls()) {
+            toast(getString(R.string.update_need_permission), long = true)
+            try {
+                startActivity(android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    android.net.Uri.parse("package:" + packageName)))
+            } catch (e: Exception) {
+                toast(getString(R.string.update_install_failed), long = true)
+            }
+            return
+        }
+        prefs.edit().putLong("pending_update_code", code).apply()
+        toast(getString(R.string.update_downloading), long = true)
+        io.execute {
+            val apk = File(cacheDir, "update.apk")
+            val ok = Updater.download(apk)
+            android.util.Log.w("Updater", "download ok=" + ok + " bytes=" + apk.length())
+            ui.post {
+                if (!isDestroyed) {
+                    if (!ok) toast(getString(R.string.update_fetch_failed))
+                    else {
+                        toast(getString(R.string.update_confirm_hint), long = true)
+                        try {
+                            Updater.install(this, apk)
+                        } catch (e: Exception) {
+                            android.util.Log.w("Updater", "commit failed", e)
+                            apk.delete()
+                            toast(getString(R.string.update_install_failed), long = true)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /** A What's new entry with a bullet, its **marked** words bold and the marks removed. */

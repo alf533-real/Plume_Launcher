@@ -113,7 +113,14 @@
     <string name="default_launcher">Home app</string>
     <string name="plume_press_change">mzilo: press to change</string>
     <string name="press_to_set">Press to set</string>
-    <string name="updates">Updates</string>
+        <!-- In-app self-update -->
+        <string name="update_need_permission">To update, allow "Install unknown apps" for mzilo in the next screen, then try again</string>
+<string name="update_checking">Checking for updates…</string>
+    <string name="update_uptodate">You are on the latest version</string>
+    <string name="update_install_btn">Download and install %1$s</string>
+    <string name="update_downloading">Downloading the update…</string>
+    <string name="update_confirm_hint">Downloaded. Confirm the install dialog to finish updating</string>
+<string name="updates">Updates</string>
     <string name="updating">Updating…</string>
     <string name="checking">Checking…</string>
     <string name="lock_layout">PIN lock</string>
@@ -186,7 +193,7 @@
     <string name="update_check_failed">Couldn\'t check for updates. Check the connection.</string>
     <string name="up_to_date_toast">mzilo is up to date</string>
     <string name="allow_installs">Turn on mzilo in the next list, then press Updates again</string>
-    <string name="update_download_failed">Couldn\'t download the update. Check the connection and try again.</string>
+    <string name="update_fetch_failed">Couldn\'t download the update. Check the connection and try again.</string>
     <string name="update_install_failed">Update failed to install</string>
     <string name="city_hint">Type a city, then Search</string>
     <string name="automatic_ip">Automatic (from your internet address)</string>
