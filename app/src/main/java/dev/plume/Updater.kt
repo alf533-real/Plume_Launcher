@@ -21,7 +21,7 @@ import java.net.URL
 object Updater {
     /** Release mirrors, tried in order. Keep both in sync when publishing. */
     val SOURCES = listOf(
-        "https://gitee.com/mzilo/mzilo-releases/releases/download/latest",
+        "https://gitee.com/mzilo/mzilo-tv/releases/download/latest",
         "https://github.com/alf533-real/Plume_Launcher/releases/latest/download",
     )
 
