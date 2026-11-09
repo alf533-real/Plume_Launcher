@@ -10,47 +10,70 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * In-app self-update for this fork. The release source is the fork's own GitHub Releases page:
- * every release ships two fixed-name assets — latest.json ({versionCode, versionName}) and
- * mzilo-latest.apk. "releases/latest/download/..." follows a redirect straight to the asset,
- * so there is no GitHub API call, no rate limit and no token.
+ * In-app self-update for this fork. Two release mirrors are tried in order — Gitee first
+ * (stable direct downloads inside China), then the GitHub fork (for users who can reach it).
+ * Each release ships two fixed-name assets: latest.json ({versionCode, versionName}) and
+ * mzilo-latest.apk. No API, no token, no rate limit on either host.
  *
  * Android 12 TV shows the system install confirmation when the session commits; the user
  * presses OK once and the app restarts into the new version. Nothing is silent by design.
  */
 object Updater {
-    /** Owner repo of the published releases. */
-    const val BASE = "https://github.com/alf533-real/Plume_Launcher/releases/latest/download"
+    /** Release mirrors, tried in order. Keep both in sync when publishing. */
+    val SOURCES = listOf(
+        "https://gitee.com/mzilo/mzilo-releases/releases/download/latest",
+        "https://github.com/alf533-real/Plume_Launcher/releases/latest/download",
+    )
 
     const val ACTION_RESULT = "dev.plume.INSTALL_RESULT"
 
+    private var base: String? = null // the mirror that answered last time; tried first
+
     /** A newer release as (versionCode, versionName), or null when up to date / unreachable. */
-    fun check(currentCode: Long): Pair<Long, String>? = try {
-        val json = http("$BASE/latest.json") ?: return null
-        val o = JSONObject(json)
-        val code = o.optLong("versionCode", 0)
-        val name = o.optString("versionName", "")
-        if (code > currentCode && name.isNotEmpty()) code to name else null
-    } catch (e: Exception) {
-        android.util.Log.w("Updater", "check failed", e)
-        null
+    fun check(currentCode: Long): Pair<Long, String>? {
+        for (src in orderedSources()) {
+            val json = http("$src/latest.json") ?: continue
+            val o = try { JSONObject(json) } catch (e: Exception) { continue }
+            val code = o.optLong("versionCode", 0)
+            val name = o.optString("versionName", "")
+            if (code > currentCode && name.isNotEmpty()) {
+                base = src
+                return code to name
+            }
+            return null // a mirror answered with no newer version: trust it, stop
+        }
+        return null
     }
 
-    /** Downloads the latest APK into [file]. Returns false on any failure. */
-    fun download(file: File): Boolean = try {
-        val c = URL("$BASE/mzilo-latest.apk").openConnection() as HttpURLConnection
-        c.connectTimeout = 10000
-        c.readTimeout = 60000
-        c.instanceFollowRedirects = true
-        val ok = c.responseCode < 300
-        if (ok) file.outputStream().use { out -> c.inputStream.use { it.copyTo(out) } }
-        c.disconnect()
-        // The apk is well over 100 KB; anything smaller is an error page, not a build.
-        ok && file.length() > 100_000
-    } catch (e: Exception) {
-        android.util.Log.w("Updater", "download failed", e)
-        file.delete()
-        false
+    private fun orderedSources(): List<String> =
+        base?.let { listOf(it) + (SOURCES - it) } ?: SOURCES
+
+    /** Downloads the latest APK into [file]. Tries every mirror in order. */
+    fun download(file: File): Boolean {
+        for (src in orderedSources()) {
+            val c = try {
+                URL("$src/mzilo-latest.apk").openConnection() as HttpURLConnection
+            } catch (e: Exception) { continue }
+            val ok = try {
+                c.connectTimeout = 8000
+                c.readTimeout = 120000
+                c.instanceFollowRedirects = true
+                val good = c.responseCode < 300
+                if (good) file.outputStream().use { out -> c.inputStream.use { it.copyTo(out) } }
+                // The apk is well over 100 KB; anything smaller is an error page, not a build.
+                good && file.length() > 100_000
+            } catch (e: Exception) {
+                false
+            } finally {
+                c.disconnect()
+            }
+            if (ok) {
+                base = src
+                return true
+            }
+            file.delete()
+        }
+        return false
     }
 
     /**
@@ -72,14 +95,13 @@ object Updater {
                 android.app.PendingIntent.FLAG_MUTABLE,
             )
             session.commit(statusReceiver.intentSender)
-            android.util.Log.w("Updater", "committed session " + sessionId)
         }
     }
 
     private fun http(url: String): String? = try {
         val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 8000
-        c.readTimeout = 20000
+        c.connectTimeout = 5000
+        c.readTimeout = 10000
         c.instanceFollowRedirects = true
         if (c.responseCode < 300) c.inputStream.use { it.readBytes().decodeToString() } else null
     } catch (e: Exception) {

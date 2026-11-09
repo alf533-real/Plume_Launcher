@@ -14,6 +14,10 @@ Write every entry in ASD-STE100 Simplified Technical English:
 
 Put changes that are not released under `## Unreleased`. Rename that heading to the version number when you release.
 
+## 1.7.1-cn15
+
+- 更新源增加国内镜像（Gitee），没有外网的电视也能正常收到更新了。
+
 ## 1.7.1-cn14
 
 - 应用支持在线更新了：设置 → 更新 页会自动检查新版本，一键下载安装，不用再连电脑。
