@@ -1,5 +1,6 @@
 package dev.plume
 
+import android.os.Build
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -190,7 +191,7 @@ internal fun fitWallpaper(open: () -> InputStream): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     open().use { BitmapFactory.decodeStream(it, null, bounds) }
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    val rotation = try {
+    val rotation = if (Build.VERSION.SDK_INT >= 24) try {
         when (open().use { ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }) {
             ExifInterface.ORIENTATION_ROTATE_90 -> 90
             ExifInterface.ORIENTATION_ROTATE_180 -> 180
@@ -199,7 +200,7 @@ internal fun fitWallpaper(open: () -> InputStream): Bitmap? {
         }
     } catch (e: IOException) {
         0
-    }
+    } else 0 // Android 6: the stream-based ExifInterface ctor needs API 24; rotation simply isn't applied
     val (w, h) = if (rotation % 180 == 0) bounds.outWidth to bounds.outHeight else bounds.outHeight to bounds.outWidth
     // Decode at the smallest size whose 16:9 crop still covers the screen: a 12 MP photo in full is ~48 MB.
     val cropW = minOf(w, h * 16 / 9)

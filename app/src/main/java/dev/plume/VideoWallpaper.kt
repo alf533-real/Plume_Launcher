@@ -1,5 +1,6 @@
 package dev.plume
 
+import android.os.Build
 import android.content.Context
 import android.media.MediaExtractor
 import android.media.MediaPlayer
@@ -128,8 +129,9 @@ internal fun downloadVideoScene(item: VideoScene, destination: File, cancelled: 
             readTimeout = 30_000
             instanceFollowRedirects = false
         }
-        if (connection.responseCode != 200 || connection.contentLengthLong !in 1..VIDEO_LIMIT) return false
-        val needed = connection.contentLengthLong + 20L * 1024 * 1024
+        val len = if (Build.VERSION.SDK_INT >= 24) connection.contentLengthLong else connection.contentLength.toLong()
+        if (connection.responseCode != 200 || len !in 1..VIDEO_LIMIT) return false
+        val needed = len + 20L * 1024 * 1024
         if (destination.parentFile?.let { it.usableSpace < needed } == true) return false
         var count = 0L
         var lastPercent = -1
@@ -143,7 +145,7 @@ internal fun downloadVideoScene(item: VideoScene, destination: File, cancelled: 
                     count += n
                     if (count > VIDEO_LIMIT) return false
                     output.write(bytes, 0, n)
-                    val percent = (count * 100 / connection.contentLengthLong).toInt()
+                    val percent = (count * 100 / len).toInt()
                     if (percent != lastPercent) { progress(percent); lastPercent = percent }
                 }
             }

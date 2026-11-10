@@ -467,7 +467,7 @@ internal class GlassLayer(context: Context) : View(context) {
                                     tile.imageShader = BitmapShader(image, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
                                     tile.bakedArea.set(area)
                                     tile.readyAt = SystemClock.uptimeMillis()
-                                    if (android.animation.ValueAnimator.areAnimatorsEnabled()) until = maxOf(until, tile.readyAt + CLEAR_FADE_MS)
+                                    if (Compat.animatorsEnabled()) until = maxOf(until, tile.readyAt + CLEAR_FADE_MS)
                                 }
                             }
                             if (isAttachedToWindow) invalidate() // An outdated job must still let the current viewport request its images.
@@ -615,7 +615,7 @@ internal class GlassLayer(context: Context) : View(context) {
             if (sh != null) {
                 val image = t.image?.takeIf { t.bakedArea == t.area }
                 val imageAlpha = if (image == null) 0 else clearImageAlpha(SystemClock.uptimeMillis() - t.readyAt, alpha,
-                    android.animation.ValueAnimator.areAnimatorsEnabled())
+                    Compat.animatorsEnabled())
                 if (imageAlpha < alpha) {
                     matrix.set(sharpBase)
                     matrix.postScale(lens, lens, rect.centerX(), rect.centerY())
@@ -691,7 +691,7 @@ internal class GlassLayer(context: Context) : View(context) {
             glintX = rect.centerX()
             until = maxOf(until, now + GLINT_WAIT + GLINT_MS)
         }
-        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) return
+        if (!Compat.animatorsEnabled()) return
         val t = glintAt(now - glintSince) ?: return
         val band = rect.width() * 0.35f
         unit.setScale(band, 1f)

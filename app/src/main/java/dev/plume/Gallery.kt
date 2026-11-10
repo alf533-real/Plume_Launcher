@@ -1,5 +1,6 @@
 package dev.plume
 
+import android.os.Build
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
@@ -191,7 +192,8 @@ private class GalleryShow(private val context: Context) : SurfaceHolder.Callback
             }
             val holder = view.holder
             val canvas = try {
-                holder.lockHardwareCanvas()
+                if (Build.VERSION.SDK_INT >= 26) holder.lockHardwareCanvas()
+                else holder.lockCanvas()
             } catch (e: Exception) {
                 null
             } ?: return

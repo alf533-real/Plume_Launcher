@@ -196,7 +196,11 @@ internal fun displayNumber(s: String?) = s?.trim()?.takeIf { it.length in 1..6 &
  */
 internal fun <T> newestPerApp(items: List<Pair<Long, T>>, perApp: Int, app: (T) -> String?): List<T> {
     val shown = HashMap<String?, Int>()
-    val (front, rest) = items.sortedByDescending { it.first }.map { it.second }.partition { shown.merge(app(it), 1, Int::plus)!! <= perApp }
+    val (front, rest) = items.sortedByDescending { it.first }.map { it.second }.partition {
+        val c = (shown[app(it)] ?: 0) + 1
+        shown[app(it)] = c
+        c <= perApp
+    }
     return front + rest
 }
 
@@ -503,7 +507,9 @@ class MainActivity : Activity() {
         })
         // Application context: ConnectivityManager keeps its first instance (and that instance's context) in a
         // static callback handler forever, so an Activity context here leaks the whole first home screen.
-        applicationContext.getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(net)
+        val cm = applicationContext.getSystemService(ConnectivityManager::class.java)
+        if (Build.VERSION.SDK_INT >= 24) cm.registerDefaultNetworkCallback(net)
+        // API 23: no network callback; wallpaper refresh still happens on resume
         getSystemService(TvInputManager::class.java)?.registerCallback(inputCallback, ui)
 
         if (checkSelfPermission(TV_LISTINGS) != PackageManager.PERMISSION_GRANTED) {
@@ -640,7 +646,7 @@ class MainActivity : Activity() {
     /** Off hands Home back to the TV's own launcher, and Plume leaves it off until switched on again. */
     private fun turnOffHomeButton() {
         prefs.edit().putBoolean("home_off", true).apply()
-        HomeOverride.running?.disableSelf()
+        if (Build.VERSION.SDK_INT >= 24) HomeOverride.running?.disableSelf()
         if (homeServiceOn() && checkSelfPermission(WRITE_SECURE) == PackageManager.PERMISSION_GRANTED) {
             val me = ComponentName(this, HomeOverride::class.java)
             val on = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
@@ -1011,7 +1017,8 @@ class MainActivity : Activity() {
     /** The clock's digits only: the date keeps the system font, which has every language's month names. */
     private fun clockFace(): Typeface = when (prefs.getString("clock_style", "light")) {
         "bold" -> Typeface.create("sans-serif", Typeface.BOLD) // strong on busy wallpapers
-        "serif" -> resources.getFont(R.font.clock_serif) // Fraunces, OFL
+        "serif" -> if (Build.VERSION.SDK_INT >= 26) resources.getFont(R.font.clock_serif) // Fraunces, OFL
+        else Typeface.create("serif", Typeface.NORMAL)
         else -> Typeface.create("sans-serif-light", Typeface.NORMAL)
     }
 
@@ -1134,7 +1141,7 @@ class MainActivity : Activity() {
         // Every frame has the thumb's size, so one mapping serves all of them.
         return inkFor(wpFrames.map { f ->
             val px = ArrayList<Float>()
-            for (y in ty(r.top)..ty(r.bottom)) for (x in tx(r.left)..tx(r.right)) px += Color.luminance(f.getPixel(x, y))
+            for (y in ty(r.top)..ty(r.bottom)) for (x in tx(r.left)..tx(r.right)) px += Compat.luminance(f.getPixel(x, y))
             px.toFloatArray()
         })
     }
@@ -1396,7 +1403,7 @@ class MainActivity : Activity() {
             // Nothing reads the pixels from here on: keep the picture in graphics memory only, not once more in the process.
             val shown = bmp?.let { b ->
                 try {
-                    b.copy(Bitmap.Config.HARDWARE, false)?.also { b.recycle() } ?: b
+                    Compat.copyBitmap(b)
                 } catch (e: Exception) {
                     b
                 }
@@ -2053,6 +2060,7 @@ class MainActivity : Activity() {
 
     private fun programsFor(s: Triple<String, Long?, String>): List<Prog> {
         val hidden = prefs.getStringSet("hidden_watch", emptySet())!!
+        if (Build.VERSION.SDK_INT < 26) return emptyList() // no Watch Next / preview tables below API 26
         val id = s.second ?: return readPrograms(TvContract.WatchNextPrograms.CONTENT_URI, hidden, hiddenPkgs = hiddenApps()).map { it.second }
         return readPrograms(TvContract.buildPreviewProgramsUriForChannel(id), hidden, "wp$id", hiddenApps()).map { it.second }
     }
@@ -3003,7 +3011,8 @@ class MainActivity : Activity() {
             path.reset()
             path.addRoundRect(hole, dp(16).toFloat(), dp(16).toFloat(), Path.Direction.CW)
             c.save()
-            c.clipOutPath(path)
+            if (Build.VERSION.SDK_INT >= 26) c.clipOutPath(path)
+            else c.clipPath(path, android.graphics.Region.Op.DIFFERENCE)
             c.drawColor(dim)
             c.restore()
             c.save()
@@ -3798,6 +3807,7 @@ class MainActivity : Activity() {
      * single-layer icons and for photo-like layers that fill the square, which keep the greyscale look.
      */
     private fun glyph(icon: Drawable): Bitmap? {
+        if (Build.VERSION.SDK_INT < 26) return null // no adaptive icons: caller falls back to the plain icon
         val fg = (icon as? AdaptiveIconDrawable)?.foreground ?: return null
         val size = dp(96) // large, so a small symbol is still sharp after trimming and scaling up
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
@@ -3853,7 +3863,7 @@ class MainActivity : Activity() {
     /** accent() per app, kept like GLYPHS; the contrast check is per theme, so it runs on every use. */
     private fun cachedAccent(a: App): Int? {
         val c = if (a.pkg in ACCENTS) ACCENTS[a.pkg] else accent(a.icon).also { ACCENTS[a.pkg] = it }
-        val lum = c?.let { Color.luminance(it) } ?: return null
+        val lum = c?.let { Compat.luminance(it) } ?: return null
         return c.takeIf { if (dark) lum > 0.08f else lum < 0.6f }
     }
 
@@ -4766,7 +4776,9 @@ class MainActivity : Activity() {
         }
         settingsList.addView(status)
         io.execute {
-            val found = Updater.check(packageManager.getPackageInfo(packageName, 0).longVersionCode)
+            val pi = packageManager.getPackageInfo(packageName, 0)
+        val currentCode = if (Build.VERSION.SDK_INT >= 28) pi.longVersionCode else pi.versionCode.toLong()
+        val found = Updater.check(currentCode)
             ui.post {
                 if (isDestroyed || pageBack == null || !status.isAttachedToWindow) return@post // page closed
                 if (found == null) {
@@ -4803,7 +4815,7 @@ class MainActivity : Activity() {
      *  First run: Android requires the "install unknown apps" toggle for this app; we open its settings page. */
     private fun performUpdate(code: Long) {
         android.util.Log.w("Updater", "performUpdate code=" + code)
-        if (!packageManager.canRequestPackageInstalls()) {
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
             toast(getString(R.string.update_need_permission), long = true)
             try {
                 startActivity(android.content.Intent(
@@ -5081,12 +5093,15 @@ class MainActivity : Activity() {
     private fun queryWatchNext(): List<Prog> {
         val hidden = prefs.getStringSet("hidden_watch", emptySet())!!
         val watchNextOn = WATCH_NEXT !in prefs.getStringSet("ch_flip", emptySet())!!
-        val watchNext = if (watchNextOn) readPrograms(TvContract.WatchNextPrograms.CONTENT_URI, hidden, hiddenPkgs = hiddenApps()) else emptyList()
+        // The WatchNextPrograms table does not exist below API 26: short-circuit BEFORE the class
+        // reference executes, or the method throws NoClassDefFoundError on old TVs (crash on Mi TV 4).
+        val watchNext = if (watchNextOn && Build.VERSION.SDK_INT >= 26) readPrograms(TvContract.WatchNextPrograms.CONTENT_URI, hidden, hiddenPkgs = hiddenApps()) else emptyList()
         val on = continueChannels()
         autoRowName = if (watchNextOn) null
             else on.map { it.third }.distinct().singleOrNull()?.takeUnless { it.equals("Continue Watching", ignoreCase = true) }
         val channels = on.flatMap { (id) ->
-            readPrograms(TvContract.buildPreviewProgramsUriForChannel(id), hidden, "ch$id", hiddenApps())
+            if (Build.VERSION.SDK_INT < 26) return emptyList()
+        readPrograms(TvContract.buildPreviewProgramsUriForChannel(id), hidden, "ch$id", hiddenApps())
         }
         val all = watchNext + channels
         android.util.Log.i("Plume", "continue watching: ${watchNext.size} from Watch Next, ${channels.size} from ${on.size} channels")
@@ -5409,7 +5424,7 @@ class MainActivity : Activity() {
     private fun progressBarDrawable(ink: Int = fg): Drawable {
         fun bar(color: Int) = GradientDrawable().apply { cornerRadius = dp(2).toFloat(); setColor(color) }
         return LayerDrawable(arrayOf(
-            bar(if (Color.luminance(ink) > 0.5f) 0x40FFFFFF else 0x26000000),
+            bar(if (Compat.luminance(ink) > 0.5f) 0x40FFFFFF else 0x26000000),
             ClipDrawable(bar(ink), Gravity.START, ClipDrawable.HORIZONTAL),
         )).apply {
             setId(0, android.R.id.background)

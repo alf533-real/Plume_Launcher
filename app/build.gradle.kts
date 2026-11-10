@@ -13,12 +13,12 @@ android {
         // A separate id so this fork installs beside the original Plume instead of over it. The sources keep the
         // dev.plume namespace; HomeWatch's own-package constant is the one place the id is written out in code.
         applicationId = "com.miaoz.plumecn"
-        minSdk = 26
+        minSdk = 23
         targetSdk = 36
-        versionCode = 115
+        versionCode = 116
         // The -cn suffix keeps this build's version apart from upstream releases; the CHANGELOG lookup falls back
         // to the "## 1.7" section, whose entries ship as the what's-new notes.
-        versionName = "1.7.1-cn16"
+        versionName = "1.7.1-cn17"
         // What's new: only this version's section of CHANGELOG.md ships, one entry per line, ** marks kept for bold.
         // A ### heading ships as a line that starts with #. A fix release (1.7.1) ships its x.y section after its own,
         // so people who update from 1.6 still see what 1.7 brought.
@@ -36,6 +36,16 @@ android {
 
     buildFeatures {
         resValues = true
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+        isCoreLibraryDesugaringEnabled = true // java.time / java.nio.file work down to Android 6
+    }
+
+    dependencies {
+        coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     }
 
     // CI fails on new lint errors only; the ones already here are listed in lint-baseline.xml

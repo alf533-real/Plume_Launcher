@@ -1,5 +1,6 @@
 package dev.plume
 
+import android.os.Build
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
@@ -55,7 +56,7 @@ internal object Bing {
      */
     fun refresh(c: Context, prefs: SharedPreferences, force: Boolean = false) {
         if (!used(prefs)) return
-        val today = LocalDate.now().toEpochDay()
+        val today = LocalDate.now().toEpochDay() // covered by core library desugaring
         val now = System.currentTimeMillis()
         val retry = if (file(c).exists()) 3_600_000L else 60_000L
         if (!force && (prefs.getLong("bing_day", 0) == today || now - prefs.getLong("bing_try", 0) < retry)) return
@@ -104,7 +105,8 @@ internal object Bing {
             val conn = connect("https://www.bing.com$path")
             val copied = conn.inputStream.use { input -> part.outputStream().use { input.copyTo(it) } }
             // A body cut short is not a picture, even if its header decodes.
-            if (conn.contentEncoding == null && conn.contentLengthLong.let { it >= 0 && it != copied }) throw IOException("cut short")
+            val len = if (Build.VERSION.SDK_INT >= 24) conn.contentLengthLong else conn.contentLength.toLong()
+        if (conn.contentEncoding == null && len.let { it >= 0 && it != copied }) throw IOException("cut short")
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(part.path, bounds)
             if (bounds.outWidth <= 0 || !part.renameTo(file(c))) throw IOException("not a picture")

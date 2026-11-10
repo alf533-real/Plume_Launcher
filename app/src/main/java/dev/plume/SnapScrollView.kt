@@ -1,5 +1,6 @@
 package dev.plume
 
+import android.os.Build
 import android.content.Context
 import android.graphics.Rect
 import android.util.AttributeSet
@@ -41,7 +42,10 @@ class SnapScrollView(context: Context, attrs: AttributeSet?) : HorizontalScrollV
             val focused = findFocus()
             if (focused != null && focused !== before && focused.isSoundEffectsEnabled) {
                 val direction = if (event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) View.FOCUS_LEFT else View.FOCUS_RIGHT
-                focused.playSoundEffect(SoundEffectConstants.getConstantForFocusDirection(direction, event.repeatCount > 0))
+                focused.playSoundEffect(if (Build.VERSION.SDK_INT >= 31)
+                        SoundEffectConstants.getConstantForFocusDirection(direction, event.repeatCount > 0)
+                    else if (direction == View.FOCUS_LEFT || direction == View.FOCUS_UP) SoundEffectConstants.NAVIGATION_LEFT
+                    else SoundEffectConstants.NAVIGATION_RIGHT)
             }
         }
         return handled
