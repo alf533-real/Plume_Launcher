@@ -115,6 +115,10 @@
     <string name="press_to_set">Press to set</string>
         <!-- In-app self-update -->
         <string name="update_need_permission">To update, allow "Install unknown apps" for mzilo in the next screen, then try again</string>
+    <!-- OEM home reset (Mi TVs restore their launcher on every boot) -->
+    <string name="home_reset_title">Default home was reset</string>
+    <string name="home_reset_body">Your TV switched the default home back to its own launcher (this happens on every boot on some TVs). Restore mzilo with one tap.</string>
+    <string name="home_reset_restore">Restore mzilo as default</string>
 <string name="update_checking">Checking for updates…</string>
     <string name="update_uptodate">You are on the latest version</string>
     <string name="update_install_btn">Download and install %1$s</string>

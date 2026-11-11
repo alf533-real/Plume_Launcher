@@ -391,6 +391,7 @@ class MainActivity : Activity() {
         }
     }
 
+    private var netRegistered = false // API 24+: Android 6 has no default-network callbacks
     private val net = object : ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(n: Network, caps: NetworkCapabilities) {
             ui.post {
@@ -481,6 +482,7 @@ class MainActivity : Activity() {
             setOnClickListener { action() }
             setOnLongClickListener { if (!holdFired) fireHold(this); true } // hold OK: move, hide or add icons
         }
+        if (homeSetUp()) prefs.edit().putBoolean("ever_home", true).apply()
         if (fakeSetup(intent)) {
             // debug: setup for a pretend TV already started
         } else if (prefs.getBoolean("reopen_settings", false)) {
@@ -490,8 +492,19 @@ class MainActivity : Activity() {
             // Fresh install: walk through making Home land on Plume, the one step that has to happen by hand.
             prefs.edit().putBoolean("setup_shown", true).apply()
             ui.post { startHomeSetup() }
-        } else if (notesUnseen()) {
+        } else if (notesUnseen() && !resetAskShown) {
             ui.post { whatsNewCard() } // after an update; the self-updater reopens Plume, so it's seen right away
+        } else if (prefs.getBoolean("ever_home", false) && !homeSetUp() && !resetAskShown) {
+            // Mi TVs hand the default-home role back to their own launcher on every boot. The user
+            // had mzilo as default once, so this popup is the one-tap way back (their choice, once
+            // per boot, dismissable).
+            resetAskShown = true
+            ui.post {
+                homePopup(0, getString(R.string.home_reset_title),
+                    getString(R.string.home_reset_body), null,
+                    getString(R.string.home_reset_restore) to { makeDefaultHome() },
+                    getString(R.string.setup_not_now) to { })
+            }
         }
 
         try {
@@ -508,7 +521,8 @@ class MainActivity : Activity() {
         // Application context: ConnectivityManager keeps its first instance (and that instance's context) in a
         // static callback handler forever, so an Activity context here leaks the whole first home screen.
         val cm = applicationContext.getSystemService(ConnectivityManager::class.java)
-        if (Build.VERSION.SDK_INT >= 24) cm.registerDefaultNetworkCallback(net)
+        netRegistered = Build.VERSION.SDK_INT >= 24
+        if (netRegistered) cm.registerDefaultNetworkCallback(net)
         // API 23: no network callback; wallpaper refresh still happens on resume
         getSystemService(TvInputManager::class.java)?.registerCallback(inputCallback, ui)
 
@@ -606,7 +620,7 @@ class MainActivity : Activity() {
         videoWallpaper.clear()
         if (Bing.onChanged === bingChanged) Bing.onChanged = null
         unregisterReceiver(packageReceiver)
-        applicationContext.getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(net)
+        if (netRegistered) applicationContext.getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(net)
         getSystemService(TvInputManager::class.java)?.unregisterCallback(inputCallback)
         upload?.stop()
         try {
@@ -728,6 +742,7 @@ class MainActivity : Activity() {
     // Each way is checked by asking for a Home press: one that reaches us arrives as a Home intent; one that
     // doesn't sends us to the background.
 
+    private var resetAskShown = false // the OEM home-reset popup shows once per boot at most
     private var setupDialog: Dialog? = null
     private var setupStep = 0 // 1 role dialog open, 2 Accessibility settings open, 3 App info open
     private var homeTest = 0 // the way being checked (1 role, 2 service) while waiting for a Home press

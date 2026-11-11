@@ -14,6 +14,11 @@ Write every entry in ASD-STE100 Simplified Technical English:
 
 Put changes that are not released under `## Unreleased`. Rename that heading to the version number when you release.
 
+## 1.7.1-cn18
+
+- 修复小米电视重启后默认桌面被重置回原装的问题：桌面会自动检测并提示一键恢复。
+- 修复在 Android 6 老系统上切换主题闪退的问题。
+
 ## 1.7.1-cn17
 
 - 重大兼容性更新：全面支持 Android 6.0 的老款电视（小米电视4 等机型实测）。
