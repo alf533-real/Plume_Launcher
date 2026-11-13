@@ -14,6 +14,10 @@ Write every entry in ASD-STE100 Simplified Technical English:
 
 Put changes that are not released under `## Unreleased`. Rename that heading to the version number when you release.
 
+## 1.7.1-cn19
+
+- 修复长按 HOME 无法打开桌面选择菜单的问题：已是默认桌面时，长按 HOME 现在会打开系统的"主屏幕应用"设置页，随时可换回原装桌面。
+
 ## 1.7.1-cn18
 
 - 修复小米电视重启后默认桌面被重置回原装的问题：桌面会自动检测并提示一键恢复。

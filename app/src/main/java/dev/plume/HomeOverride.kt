@@ -80,7 +80,10 @@ class HomeOverride : AccessibilityService() {
     private fun startHomePicker() {
         if (Build.VERSION.SDK_INT >= 29) {
             val rm = getSystemService(RoleManager::class.java)
-            if (rm.isRoleAvailable(RoleManager.ROLE_HOME)) {
+            // The role dialog silently grants and finishes when we already hold the role — no UI at
+            // all, so holding Home looks dead. While we're the default, the settings page is the
+            // picker that always lists every home app, including the stock one.
+            if (rm.isRoleAvailable(RoleManager.ROLE_HOME) && !rm.isRoleHeld(RoleManager.ROLE_HOME)) {
                 startActivity(rm.createRequestRoleIntent(RoleManager.ROLE_HOME)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 return
